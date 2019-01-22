@@ -97,11 +97,11 @@ optimizer_d = torch.optim.Adam(aD.parameters(), lr=0.0001, betas=(0,0.9))
 criterion = nn.CrossEntropyLoss()
 
 np.random.seed(352)
-label = np.asarray(list(range(10))*10)
-noise = np.random.normal(0,1,(100,n_z))
-label_onehot = np.zeros((100,n_classes))
-label_onehot[np.arange(100), label] = 1
-noise[np.arange(100), :n_classes] = label_onehot[np.arange(100)]
+label = np.asarray(list(range(10))*10) #represent classes
+noise = np.random.normal(0,1,(100,n_z)) #100*100 random noise
+label_onehot = np.zeros((100,n_classes)) 
+label_onehot[np.arange(100), label] = 1 #one hot encoding the 100 labels
+noise[np.arange(100), :n_classes] = label_onehot[np.arange(100)] #fist 10 colums is used to indicate classes
 noise = noise.astype(np.float32)
 save_noise = torch.from_numpy(noise)
 save_noise = Variable(save_noise).cuda()
@@ -133,13 +133,13 @@ for epoch in range(0,num_epochs):
 
         if(Y_train_batch.shape[0] < batch_size):
             continue
-        # train G
+        # train G, gen_train can be adjusted to less frequently train generator.
         if((batch_idx%gen_train)==0):
             for p in aD.parameters():
                 p.requires_grad_(False)
 
             aG.zero_grad()
-
+            #this is the initial random noise with labels
             label = np.random.randint(0,n_classes,batch_size)
             noise = np.random.normal(0,1,(batch_size,n_z))
             label_onehot = np.zeros((batch_size,n_classes))
@@ -149,16 +149,16 @@ for epoch in range(0,num_epochs):
             noise = torch.from_numpy(noise)
             noise = Variable(noise).cuda()
             fake_label = Variable(torch.from_numpy(label)).cuda()
-
+            
             fake_data = aG(noise)
             output  = aD(fake_data)
-            gen_source = output[0]
-            gen_class = output[1]
+            gen_source = output[0] #this is the result from fc1
+            gen_class = output[1] #this is the result from fc10
 
-            gen_source = gen_source.mean()
+            gen_source = gen_source.mean() #Discriminator wants to be positive for real image
             gen_class = criterion(gen_class, fake_label)
 
-            gen_cost = -gen_source + gen_class
+            gen_cost = -gen_source + gen_class #So generator wants to minimize the cost
             gen_cost.backward()
 
             optimizer_g.step()
@@ -203,7 +203,12 @@ for epoch in range(0,num_epochs):
         disc_real_class = criterion(disc_real_class, real_label)
 
         gradient_penalty = calc_gradient_penalty(aD,real_data,fake_data)
-
+#The discriminator is being trained on two separate batches of data. The first is on fake data coming from the generator.
+#The second is on the real data. Lastly, the gradient penalty function is called based on the real and fake data. 
+#This results in 5 separate terms for the loss function.
+#The _source losses are for the Wasserstein GAN formulation. 
+#The discriminator is trying to maximize the scores for the real data and minimize the scores for the fake data. 
+#The `_class losses are for the auxiliary classifier wanting to correctly identify the class regardless of if the data is real or fake.
         disc_cost = disc_fake_source - disc_real_source + disc_real_class + disc_fake_class + gradient_penalty
         disc_cost.backward()
 
